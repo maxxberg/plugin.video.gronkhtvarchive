@@ -4,10 +4,10 @@ import xbmcgui
 import xbmcplugin
 
 python_version = sys.version_info[0]
-if python_version == 2:
+try:
     from urllib import urlencode
     from urlparse import parse_qsl
-else:
+except:
     from urllib.parse import urlencode, parse_qsl
 
 SEARCH_API = "https://api.gronkh.tv/v1/search"
@@ -27,12 +27,12 @@ def get_all_streams():
             vids = r.json()["results"]["videos"]
             for vid in vids:
                 tags = [tag["title"] for tag in vid["tags"]]
-                all_vids[vid["episode"]] = {"title": vid["title"],
+                yield (vid["episode"], {"title": vid["title"],
                                             "length": vid["video_length"],
                                             "created_at": vid["created_at"][:10],
                                             "thumbnail": vid["preview_url"],
                                             "tags": tags
-                                            }
+                                            })
             counter += 1
         except KeyError:
             break
@@ -100,35 +100,48 @@ def search_for_title():
     xbmcplugin.setContent(__handle__, 'videos')
     key_input = get_keyboard_input()
     if key_input:
-        all_streams = get_all_streams()
+        all_streams_gen = get_all_streams()
         found_streams = []
-        for episode, info in all_streams.items():
+        all_streams = {}
+        for (episode, info) in all_streams_gen:
             if key_input in info["title"].lower():
                 found_streams.append(episode)
+                all_streams[episode] = info
         create_streamlist(all_streams, sorted(found_streams, reverse=True))
 
 
 def search_for_month():
+    #web_pdb.set_trace()
     xbmcplugin.setPluginCategory(__handle__, "Monatssuche")
     xbmcplugin.setContent(__handle__, 'videos')
     months = ["Januar", "Februar", "Maerz", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober",
               "November", "Dezember"]
     month = get_month_from_id(xbmcgui.Dialog().select("Monat auswaehlen", months))
     if month != -1:
-        all_streams = get_all_streams()
+        all_streams_gen = get_all_streams()
+        all_streams = {}
         found_streams = []
-        for episode, info in all_streams.items():
+        for (episode, info) in all_streams_gen:
+             if month == get_created_month(info["created_at"]):
+                found_streams.append(episode)
+                all_streams[episode] = info
+                break
+        for (episode, info) in all_streams_gen:
             if month == get_created_month(info["created_at"]):
                 found_streams.append(episode)
+                all_streams[episode] = info
+            else:
+                break
         create_streamlist(all_streams, sorted(found_streams, reverse=True))
 
 
 def search_for_category_list():
     xbmcplugin.setPluginCategory(__handle__, "Kategoriesuche (Liste)")
     xbmcplugin.setContent(__handle__, 'videos')
-    all_streams = get_all_streams()
+    all_streams_gen = get_all_streams()
+    all_streams = {}
     categories = set()
-    for episode, info in all_streams.items():
+    for (episode, info) in all_streams_gen:
         tags = info["tags"]
         for tag in tags:
             categories.add(tag)
@@ -148,17 +161,20 @@ def search_for_category_freetext():
     xbmcplugin.setContent(__handle__, 'videos')
     key_input = get_keyboard_input()
     if key_input:
-        all_streams = get_all_streams()
+        all_streams_gen = get_all_streams()
+        all_streams = {}
         found_streams = []
-        for episode, info in all_streams.items():
+        for (episode, info) in all_streams_gen:
             if python_version == 2:
                 for tag in info["tags"]:
                     if key_input in tag.lower():
                         found_streams.append(episode)
+                        all_streams[episode] = info
             else:
                 for tag in info["tags"]:
                     if key_input in tag.lower():
                         found_streams.append(episode)
+                        all_streams[episode] = info
         create_streamlist(all_streams, sorted(found_streams, reverse=True))
 
 
@@ -168,11 +184,13 @@ def search_for_year():
     key_input = get_keyboard_input()
     if key_input:
         if key_input.isdecimal():
-            all_streams = get_all_streams()
+            all_streams_gen = get_all_streams()
+            all_streams = {}
             found_streams = []
-            for episode, info in all_streams.items():
+            for (episode, info) in all_streams_gen:
                 if key_input == get_created_year(info["created_at"]):
                     found_streams.append(episode)
+                    all_streams[episode] = info
             create_streamlist(all_streams, sorted(found_streams, reverse=True))
 
 
@@ -187,11 +205,13 @@ def search_for_month_year():
         key_input = get_keyboard_input()
         if key_input:
             if key_input.isdecimal() and month != -1:
-                all_streams = get_all_streams()
+                all_streams_gen = get_all_streams()
+                all_streams = {}
                 found_streams = []
-                for episode, info in all_streams.items():
+                for (episode, info) in all_streams_gen:
                     if key_input == get_created_year(info["created_at"]) and month == get_created_month(info["created_at"]):
                         found_streams.append(episode)
+                        all_streams[episode] = info
                 create_streamlist(all_streams, sorted(found_streams, reverse=True))
 
 
@@ -212,7 +232,8 @@ def search_menu():
 def all_streams_menu():
     xbmcplugin.setPluginCategory(__handle__, "Vergangene Streams")
     xbmcplugin.setContent(__handle__, 'videos')
-    all_streams = get_all_streams()
+    all_streams_gen = get_all_streams()
+    all_streams = { episode:info for (episode, info) in all_streams_gen }
     sorted_episodes = sorted(all_streams.keys(), reverse=True)
     create_streamlist(all_streams, sorted_episodes)
 
