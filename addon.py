@@ -142,6 +142,7 @@ def search_for_category_list():
     all_streams = {}
     categories = set()
     for (episode, info) in all_streams_gen:
+        all_streams[episode] = info
         tags = info["tags"]
         for tag in tags:
             categories.add(tag)
