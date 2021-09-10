@@ -10,6 +10,7 @@ try:
 except:
     from urllib.parse import urlencode, parse_qsl
 
+API = "https://api.gronkh.tv/v1"
 SEARCH_API = "https://api.gronkh.tv/v1/search"
 PLAYLIST_API = "https://api.gronkh.tv/v1/video/playlist"
 
@@ -18,11 +19,17 @@ __handle__ = int(sys.argv[1])
 
 
 # Getter functions
-def get_all_streams():
+def get_all_streams(tags = None, search_string = None):
     all_vids = {}
     counter = 0
+    params = {}
+    if tags:
+        params['tags']=','.join(tags)
+    if search_string:
+        params['query']=search_string
     while True:
-        r = requests.get(SEARCH_API, params={"offset": counter * 25, "first": 25})
+        params.update({"offset": counter * 25, "first": 25})
+        r = requests.get(SEARCH_API, params=params)
         try:
             vids = r.json()["results"]["videos"]
             for vid in vids:
@@ -34,9 +41,17 @@ def get_all_streams():
                                             "tags": tags
                                             })
             counter += 1
+            if len(vids)==0:
+                break
         except KeyError:
             break
     return all_vids
+
+def get_all_tags():
+    tags = {}
+    r = requests.get(API + '/tags/all')
+    if r.status_code == 200:
+        return { item['id']:item['title'] for item in r.json() }
 
 
 def get_stream_title(stream_dict, episode):
@@ -100,18 +115,11 @@ def search_for_title():
     xbmcplugin.setContent(__handle__, 'videos')
     key_input = get_keyboard_input()
     if key_input:
-        all_streams_gen = get_all_streams()
-        found_streams = []
-        all_streams = {}
-        for (episode, info) in all_streams_gen:
-            if key_input in info["title"].lower():
-                found_streams.append(episode)
-                all_streams[episode] = info
-        create_streamlist(all_streams, sorted(found_streams, reverse=True))
+        all_streams = { episode:info for (episode,info) in get_all_streams(search_string=key_input) }
+        create_streamlist(all_streams, sorted(all_streams, reverse=True))
 
 
 def search_for_month():
-    #web_pdb.set_trace()
     xbmcplugin.setPluginCategory(__handle__, "Monatssuche")
     xbmcplugin.setContent(__handle__, 'videos')
     months = ["Januar", "Februar", "Maerz", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober",
@@ -140,21 +148,14 @@ def search_for_category_list():
     xbmcplugin.setContent(__handle__, 'videos')
     all_streams_gen = get_all_streams()
     all_streams = {}
-    categories = set()
-    for (episode, info) in all_streams_gen:
-        all_streams[episode] = info
-        tags = info["tags"]
-        for tag in tags:
-            categories.add(tag)
-    categories = sorted(list(categories))
-    category = xbmcgui.Dialog().select("Kategorie auswaehlen", categories)
+    categories = get_all_tags()
+    category = xbmcgui.Dialog().select("Kategorie auswaehlen", list(categories.values()))
     if category != -1:
-        category = categories[category]
+        category = list(categories.keys())[category]
         found_streams = []
-        for episode, info in all_streams.items():
-            if category in info["tags"]:
-                found_streams.append(episode)
-        create_streamlist(all_streams, sorted(found_streams, reverse=True))
+        for (episode, info) in get_all_streams(tags=[str(category)]):
+            all_streams[episode] = info
+        create_streamlist(all_streams, sorted(all_streams, reverse=True))
 
 
 def search_for_category_freetext():
@@ -162,21 +163,10 @@ def search_for_category_freetext():
     xbmcplugin.setContent(__handle__, 'videos')
     key_input = get_keyboard_input()
     if key_input:
-        all_streams_gen = get_all_streams()
-        all_streams = {}
-        found_streams = []
-        for (episode, info) in all_streams_gen:
-            if python_version == 2:
-                for tag in info["tags"]:
-                    if key_input in tag.lower():
-                        found_streams.append(episode)
-                        all_streams[episode] = info
-            else:
-                for tag in info["tags"]:
-                    if key_input in tag.lower():
-                        found_streams.append(episode)
-                        all_streams[episode] = info
-        create_streamlist(all_streams, sorted(found_streams, reverse=True))
+        all_categories = get_all_tags()
+        categories = [str(tag) for tag in all_categories if key_input in all_categories[tag].lower()]
+        all_streams = { episode:info for (episode, info) in get_all_streams(categories) }
+        create_streamlist(all_streams, sorted(all_streams, reverse=True))
 
 
 def search_for_year():
